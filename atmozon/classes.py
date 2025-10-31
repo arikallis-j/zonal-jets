@@ -45,17 +45,11 @@ class Atmosphere(eqx.Module):
         real = random.normal(key_r, shape)
         imag = random.normal(key_i, shape)
         return real + 1j * imag    
-    
-    def enforce_hermitian(self, z_hat):
-        z_flip = jnp.conj(jnp.flip(jnp.flip(z_hat, axis=0), axis=1))
-        z_sym = 0.5 * (z_hat + z_flip)
-        return z_sym
 
     def make_white_forcing(self, k2, mask):
         band = self.mask_forcing(k2) * mask
         noise = self.random_complex_gaussian(k2.shape)
         noise = noise * band
-        # noise = self.enforce_hermitian(noise)
         
         power = jnp.sum(jnp.abs(noise)**2)
         scale = jnp.where(power > 0, jnp.sqrt(self.f_amp / (power + 1e-16)), 0.0)
@@ -89,12 +83,13 @@ class Atmosphere(eqx.Module):
         coriolis_hat = self.beta * uy_hat
 
         # forcing
-        f_hat = self.make_white_forcing(k2, mask)
+        _f = ifft2(self.make_white_forcing(k2,mask))
+        f_hat = fft2(_f - _f.mean())
 
         # диффузионный член ν ∇^2 ω в спектре: -ν k^2 ω_hat
         diff_hat = - self.mu * zeta_hat_dealiased - self.nu * k2**self.p * zeta_hat_dealiased
 
-        # dω_hat/dt = - fft(u·∇ω) - coriolis_hat + diff_hat
+        # dω_hat/dt = - fft(u·∇ω) - coriolis_hat + diff_hat + f_hat
         return -adv_hat - coriolis_hat + diff_hat + f_hat
 
 
@@ -109,6 +104,7 @@ class Grid:
         self._get_dealiasing()
 
     def calc(self, atm, steps):
+        atm.rhs(fft2(self.zeta), self.k2, self.iky, self.ikx, self.mask)
         @jit
         def rk4_step(zeta_hat):
             r1 = atm.rhs(zeta_hat, self.k2, self.iky, self.ikx, self.mask)
@@ -132,30 +128,46 @@ class Grid:
         self.u, self.v = atm.velocity(zeta_hat, self.k2, self.iky, self.ikx)
         self.U = jnp.sqrt(self.u**2 + self.v**2)
         zeta_hat.block_until_ready()
+        
+        self.U_mean = jnp.mean(self.U)
+        self.kR = (atm.beta/(2*self.U_mean))**(1/2)
+        self.LR = 1 / self.kR 
+        self.E_tot = self.U_mean**2/2
+        self.T += atm.dt * steps 
+        self.epsilon = self.E_tot/self.T
+
+        self.n_R = self.kR
+        self.n_beta = 0.5 * (atm.beta**3/self.epsilon)**(1/5)
+        self.R_beta = self.n_beta/self.n_R
     
-    def plot_zeta(self, show=False):
+    
+    def plot_zeta(self, show=True, save=False):
         plt.figure(figsize=(6,5))
         plt.contourf(np.array(self.X), np.array(self.Y), np.array(self.zeta), levels=60)
         plt.colorbar()
         plt.title("Vorticity")
-        plt.savefig('zeta.png')
+        if save:
+            plt.savefig('zeta.png')
         if show:
             plt.show()
 
-    def plot_U(self, show=False):
+    def plot_U(self, show=True, save=False):
         plt.figure(figsize=(6,5))
         plt.contourf(np.array(self.X), np.array(self.Y), np.array(self.U), levels=60)
         plt.colorbar()
         plt.title("U(x,y)")
-        plt.savefig('U.png')
+        if save:
+            plt.savefig('U.png')
         if show:
             plt.show()
 
     def _create_coordinates(self):
         x = jnp.linspace(0, self.L, self.N, endpoint=False)
         y = jnp.linspace(0, self.L, self.N, endpoint=False)
+        self.dy = self.L / self.N
         self.X, self.Y = jnp.meshgrid(x, y, indexing='ij')
-        self.zeta = jnp.zeros((self.N, self.N)) #random.normal(key, (self.N, self.N))
+        self.zeta = jnp.zeros((self.N, self.N))
+        self.T = 0
 
     def _create_frequencies(self):
         self.k =  2 * PI * jnp.fft.fftfreq(self.N, d=(self.L / self.N))

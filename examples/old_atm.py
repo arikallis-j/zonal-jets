@@ -394,7 +394,7 @@ config = Config(Nx=256,Ny=256,
     dt = 0.01,
 )
 atm = Atmosphere(config)
-N = 100_000
+N = 100
 k = 0 
 while True:
     atm.step()#mod='etdrk4'
