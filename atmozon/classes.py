@@ -3,6 +3,7 @@ from jax import lax, jit, pmap, random
 import equinox as eqx
 import numpy as np
 import matplotlib.pyplot as plt
+import json, os
 
 from .funcs import fft2, ifft2
 from .consts import PI
@@ -121,6 +122,14 @@ class Grid:
         def integrate(zeta_hat_0, steps):
             return lax.fori_loop(0, steps, time_step, zeta_hat_0)
         
+        file_path = "data/zeta.json"
+        with open(file_path, 'r') as f:
+            self.zeta = jnp.array(json.load(f))
+            
+        file_path = "data/T.json"
+        with open(file_path, 'r') as f:
+            self.T = json.load(f)
+
         zeta_hat = fft2(self.zeta)
         zeta_hat = integrate(zeta_hat, steps)
 
@@ -139,6 +148,15 @@ class Grid:
         self.n_R = self.kR
         self.n_beta = 0.5 * (atm.beta**3/self.epsilon)**(1/5)
         self.R_beta = self.n_beta/self.n_R
+        
+        file_path = "data/zeta.json"
+        with open(file_path, 'w') as f:
+            json.dump(self.zeta.tolist(), f, indent=4)
+
+        file_path = f"data/T.json"
+        with open(file_path, 'w') as f:
+            json.dump(self.T, f, indent=4)
+
     
     
     def plot_zeta(self, show=True, save=False):
@@ -168,6 +186,15 @@ class Grid:
         self.X, self.Y = jnp.meshgrid(x, y, indexing='ij')
         self.zeta = jnp.zeros((self.N, self.N))
         self.T = 0
+
+        os.makedirs(f"data", exist_ok=True)
+        file_path = f"data/zeta.json"
+        with open(file_path, 'w') as f:
+            json.dump(self.zeta.tolist(), f, indent=4)
+
+        file_path = f"data/T.json"
+        with open(file_path, 'w') as f:
+            json.dump(self.T, f, indent=4)
 
     def _create_frequencies(self):
         self.k =  2 * PI * jnp.fft.fftfreq(self.N, d=(self.L / self.N))
