@@ -184,17 +184,30 @@ class Grid:
         y = jnp.linspace(0, self.L, self.N, endpoint=False)
         self.dy = self.L / self.N
         self.X, self.Y = jnp.meshgrid(x, y, indexing='ij')
-        self.zeta = jnp.zeros((self.N, self.N))
-        self.T = 0
+
 
         os.makedirs(f"data", exist_ok=True)
-        file_path = f"data/zeta.json"
-        with open(file_path, 'w') as f:
-            json.dump(self.zeta.tolist(), f, indent=4)
-
-        file_path = f"data/T.json"
-        with open(file_path, 'w') as f:
-            json.dump(self.T, f, indent=4)
+        file_path = "data/zeta.json"
+        if os.path.exists(file_path):
+            print("Loading zeta...")
+            file_path = "data/zeta.json"
+            with open(file_path, 'r') as f:
+                self.zeta = jnp.array(json.load(f))
+            file_path = "data/T.json"
+            with open(file_path, 'r') as f:
+                self.T = json.load(f)
+            print("Zeta loaded.")
+        else:
+            print("Creating zeta...")
+            self.zeta = jnp.zeros((self.N, self.N))
+            self.T = 0
+            file_path = f"data/zeta.json"
+            with open(file_path, 'w') as f:
+                json.dump(self.zeta.tolist(), f, indent=4)
+            file_path = f"data/T.json"
+            with open(file_path, 'w') as f:
+                json.dump(self.T, f, indent=4)
+            print("Zeta created.")
 
     def _create_frequencies(self):
         self.k =  2 * PI * jnp.fft.fftfreq(self.N, d=(self.L / self.N))
