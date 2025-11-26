@@ -195,15 +195,15 @@ class Atmosphere:
 
     def _init_grid(self):
         self.x = jnp.linspace(0, self.l, self.N, endpoint=False)
-        self.y = jnp.linspace(0, self.l, self.N, endpoint=False)
+        self.y = jnp.linspace(0, self.l, self.N+1, endpoint=False)
 
-        self.X, self.Y = jnp.meshgrid(self.x, self.y, indexing='ij')
+        self.X, self.Y = jnp.meshgrid(self.x, self.y, indexing='xy')
         self.dx = self.x[1] - self.x[0]
         self.dy = self.y[1] - self.y[0]
         self.dxdy = self.dx * self.dy
-
-        self.zeta = 2 * random.uniform(self.key, (self.N, self.N)) - 1 
-        #self.zeta = jnp.zeros((self.N, self.N))
+        
+        # self.zeta = 2 * random.uniform(self.key, (self.N, self.N)) - 1 
+        self.zeta = jnp.zeros((self.N, self.N))
         self.t = 0
 
         self.k =  2 * PI * jnp.fft.fftfreq(self.N, d=(self.l/self.N))
@@ -217,7 +217,7 @@ class Atmosphere:
 
         kxmax = jnp.max(jnp.abs(self.k))
         cutoff = 2.0/3.0 * kxmax
-        self.Kx, self.Ky = jnp.meshgrid(jnp.abs(self.k), jnp.abs(self.k), indexing='ij')
+        self.Kx, self.Ky = jnp.meshgrid(jnp.abs(self.k), jnp.abs(self.k), indexing='xy')
         self.dealiasing = jnp.where((self.Kx < cutoff) & (self.Ky < cutoff), 1.0, 0.0)
         
         self.k1 = jnp.sqrt(k2)
@@ -300,7 +300,7 @@ class Atmosphere:
             xi = ifft2(xi_tilde)
             E = self.epsilon * fft2(xi - xi.mean())
 
-            N = - A #+ E
+            N = - A + E
 
             return N
         
@@ -403,3 +403,43 @@ class Atmosphere:
         plt.close(fig)
 
         return ani_html
+    
+    def plot_zeta(self, show=True, save=False):
+        plt.figure(figsize=(6,5))
+        plt.contourf(np.array(self.X), np.array(self.Y), np.array(self.zeta), levels=60, cmap='seismic')
+        plt.colorbar()
+        plt.title("Vorticity")
+        if save:
+            plt.savefig('zeta.png')
+        if show:
+            plt.show()
+
+    def plot_U(self, show=True, save=False):
+        plt.figure(figsize=(6,5))
+        plt.contourf(np.array(self.X), np.array(self.Y), np.array(self.u), levels=60, cmap='seismic')
+        plt.colorbar()
+        plt.title("U(x,y)")
+        if save:
+            plt.savefig('U.png')
+        if show:
+            plt.show()
+    
+    def plot_Ux(self, show=True, save=False):
+        plt.figure(figsize=(6,5))
+        plt.contourf(np.array(self.X), np.array(self.Y), np.array(self.ux), levels=60, cmap='seismic')
+        plt.colorbar()
+        plt.title("u(x,y)")
+        if save:
+            plt.savefig('Ux.png')
+        if show:
+            plt.show()
+    
+    def plot_Uy(self, show=True, save=False):
+        plt.figure(figsize=(6,5))
+        plt.contourf(np.array(self.X), np.array(self.Y), np.array(self.uy), levels=60, cmap='seismic')
+        plt.colorbar()
+        plt.title("v(x,y)")
+        if save:
+            plt.savefig('Uy.png')
+        if show:
+            plt.show()
