@@ -97,7 +97,7 @@ class Atmosphere:
         self.dy = self.y[1] - self.y[0]
         self.dxdy = self.dx * self.dy
 
-        self.zeta = jnp.array(self.ds['zeta'].values[-1])
+        self.zeta = jnp.array(self.ds['zeta'].values[-1].T)
         self.t = self.ds['t'].values[-1]
 
         self.k =  2 * PI * jnp.fft.fftfreq(self.N, d=(self.l/self.N))
@@ -135,14 +135,14 @@ class Atmosphere:
 
         self.ds_grid = xr.Dataset(
                 data_vars={
-                "X": (("x", "y"), np.array(self.X), {"units": "dimless", "long_name": "Length on X axis"}),
-                "Y": (("x", "y"), np.array(self.Y), {"units": "dimless", "long_name": "Length on Y axis"}),
-                "Kx": (("kx", "ky"), np.array(self.Kx), {"units": "dimless", "long_name": "Wavenumber on X axis"}),
-                "Ky": (("kx", "ky"), np.array(self.Ky), {"units": "dimless", "long_name": "Wavenumber on Y axis"}),
-                "k1": (("kx", "ky"), np.array(self.k1), {"units": "dimless", "long_name": "Absolute wavenumber"}),
-                "k2": (("kx", "ky"), np.array(self.k2), {"units": "dimless", "long_name": "Square of wavenumber"}),
-                "D": (("kx", "ky"), np.array(self.dealiasing), {"units": "dimless", "long_name": "Dealiasing condition"}),
-                "F": (("kx", "ky"), np.array(self.forcing), {"units": "dimless", "long_name": "Forcing range"}),
+                "X": (("x", "y"), np.array(self.X.T), {"units": "dimless", "long_name": "Length on X axis"}),
+                "Y": (("x", "y"), np.array(self.Y.T), {"units": "dimless", "long_name": "Length on Y axis"}),
+                "Kx": (("kx", "ky"), np.array(self.Kx.T), {"units": "dimless", "long_name": "Wavenumber on X axis"}),
+                "Ky": (("kx", "ky"), np.array(self.Ky.T), {"units": "dimless", "long_name": "Wavenumber on Y axis"}),
+                "k1": (("kx", "ky"), np.array(self.k1.T), {"units": "dimless", "long_name": "Absolute wavenumber"}),
+                "k2": (("kx", "ky"), np.array(self.k2.T), {"units": "dimless", "long_name": "Square of wavenumber"}),
+                "D": (("kx", "ky"), np.array(self.dealiasing.T), {"units": "dimless", "long_name": "Dealiasing condition"}),
+                "F": (("kx", "ky"), np.array(self.forcing.T), {"units": "dimless", "long_name": "Forcing range"}),
             },
             coords={
                 "x": self.x,
@@ -195,15 +195,15 @@ class Atmosphere:
 
     def _init_grid(self):
         self.x = jnp.linspace(0, self.l, self.N, endpoint=False)
-        self.y = jnp.linspace(0, self.l, self.N+1, endpoint=False)
+        self.y = jnp.linspace(0, self.l, self.N, endpoint=False)
 
-        self.X, self.Y = jnp.meshgrid(self.x, self.y, indexing='xy')
+        self.X, self.Y = jnp.meshgrid(self.x, self.y, indexing='ij')
         self.dx = self.x[1] - self.x[0]
         self.dy = self.y[1] - self.y[0]
         self.dxdy = self.dx * self.dy
-        
-        # self.zeta = 2 * random.uniform(self.key, (self.N, self.N)) - 1 
-        self.zeta = jnp.zeros((self.N, self.N))
+
+        self.zeta = 2 * random.uniform(self.key, (self.N, self.N)) - 1 
+        #self.zeta = jnp.zeros((self.N, self.N))
         self.t = 0
 
         self.k =  2 * PI * jnp.fft.fftfreq(self.N, d=(self.l/self.N))
@@ -217,11 +217,19 @@ class Atmosphere:
 
         kxmax = jnp.max(jnp.abs(self.k))
         cutoff = 2.0/3.0 * kxmax
-        self.Kx, self.Ky = jnp.meshgrid(jnp.abs(self.k), jnp.abs(self.k), indexing='xy')
+        self.Kx, self.Ky = jnp.meshgrid(jnp.abs(self.k), jnp.abs(self.k), indexing='ij')
         self.dealiasing = jnp.where((self.Kx < cutoff) & (self.Ky < cutoff), 1.0, 0.0)
         
         self.k1 = jnp.sqrt(k2)
         self.forcing = jnp.where((self.k1 >= (self.kf-self.dk)) & (self.k1  <= (self.kf+self.dk)), 1.0, 0.0)
+
+        eps = 1e-36
+        s = 4
+        k_abs = jnp.abs(self.k1)
+        kmax = k_abs.max()
+        k_crit = 0
+        alpha = -np.log(eps)
+        self.sigma = np.where(k_abs - k_crit > 0, np.exp(- alpha * ((k_abs - k_crit)/kmax)**s), 1)
 
         self.zeta_tilde = fft2(self.zeta) * self.dxdy
         self.ux_tilde = +self.iky/self.k2 * self.zeta_tilde
@@ -241,14 +249,14 @@ class Atmosphere:
 
         self.ds_grid = xr.Dataset(
                 data_vars={
-                "X": (("x", "y"), np.array(self.X), {"units": "dimless", "long_name": "Length on X axis"}),
-                "Y": (("x", "y"), np.array(self.Y), {"units": "dimless", "long_name": "Length on Y axis"}),
-                "Kx": (("kx", "ky"), np.array(self.Kx), {"units": "dimless", "long_name": "Wavenumber on X axis"}),
-                "Ky": (("kx", "ky"), np.array(self.Ky), {"units": "dimless", "long_name": "Wavenumber on Y axis"}),
-                "k1": (("kx", "ky"), np.array(self.k1), {"units": "dimless", "long_name": "Absolute wavenumber"}),
-                "k2": (("kx", "ky"), np.array(self.k2), {"units": "dimless", "long_name": "Square of wavenumber"}),
-                "D": (("kx", "ky"), np.array(self.dealiasing), {"units": "dimless", "long_name": "Dealiasing condition"}),
-                "F": (("kx", "ky"), np.array(self.forcing), {"units": "dimless", "long_name": "Forcing range"}),
+                "X": (("x", "y"), np.array(self.X.T), {"units": "dimless", "long_name": "Length on X axis"}),
+                "Y": (("x", "y"), np.array(self.Y.T), {"units": "dimless", "long_name": "Length on Y axis"}),
+                "Kx": (("kx", "ky"), np.array(self.Kx.T), {"units": "dimless", "long_name": "Wavenumber on X axis"}),
+                "Ky": (("kx", "ky"), np.array(self.Ky.T), {"units": "dimless", "long_name": "Wavenumber on Y axis"}),
+                "k1": (("kx", "ky"), np.array(self.k1.T), {"units": "dimless", "long_name": "Absolute wavenumber"}),
+                "k2": (("kx", "ky"), np.array(self.k2.T), {"units": "dimless", "long_name": "Square of wavenumber"}),
+                "D": (("kx", "ky"), np.array(self.dealiasing.T), {"units": "dimless", "long_name": "Dealiasing condition"}),
+                "F": (("kx", "ky"), np.array(self.forcing.T), {"units": "dimless", "long_name": "Forcing range"}),
             },
             coords={
                 "x": self.x,
@@ -261,10 +269,10 @@ class Atmosphere:
 
         self.ds_field = xr.Dataset(
             data_vars={
-                "zeta": (("x", "y"), np.array(self.zeta), {"units": "dimless", "long_name": "Vorticity"}),
-                "ux": (("x", "y"), np.array(self.ux), {"units": "dimless", "long_name": "Velocity on X axis"}),
-                "uy": (("x", "y"), np.array(self.uy), {"units": "dimless", "long_name": "Velocity on Y axis"}),
-                "u": (("x", "y"), np.array(self.u), {"units": "dimless", "long_name": "Absolute velocity"}),
+                "zeta": (("x", "y"), np.array(self.zeta.T), {"units": "dimless", "long_name": "Vorticity"}),
+                "ux": (("x", "y"), np.array(self.ux.T), {"units": "dimless", "long_name": "Velocity on X axis"}),
+                "uy": (("x", "y"), np.array(self.uy.T), {"units": "dimless", "long_name": "Velocity on Y axis"}),
+                "u": (("x", "y"), np.array(self.u.T), {"units": "dimless", "long_name": "Absolute velocity"}),
                 "R_beta": (("t"), np.array([self.R_beta]), {"units": "dimless", "long_name": "R beta"}),
             },
             coords={
@@ -281,7 +289,7 @@ class Atmosphere:
         self.ds.to_netcdf(f"data/{self.name}.nc", mode="w")
     
     def _init_terms(self):
-        self.a = - self.mu - (-1)**(self.p + 1) * self.nu * self.k2 + self.ikx/self.k2 * self.beta
+        self.a = - self.mu - (-1)**(self.p + 1) * self.nu * self.k2**self.p + self.ikx/self.k2 * self.beta
          
         @jit
         def b(zeta):
@@ -300,7 +308,7 @@ class Atmosphere:
             xi = ifft2(xi_tilde)
             E = self.epsilon * fft2(xi - xi.mean())
 
-            N = - A + E
+            N = - A #+ E
 
             return N
         
@@ -316,7 +324,7 @@ class Atmosphere:
             d2 = self.b((z + self.h/2*d1) * self.phi) / self.phi
             d3 = self.b((z + self.h/2*d2) * self.phi) / self.phi
             d4 = self.b((z + self.h*d3) * self.phi2) / self.phi2
-            return self.phi2 * (z + self.h/6 * (d1 + 2*d2 + 2*d3 + d4))
+            return self.sigma * self.phi2 * (z + self.h/6 * (d1 + 2*d2 + 2*d3 + d4))
         
         @jit
         def time_step(n, zeta_hat):
@@ -347,12 +355,46 @@ class Atmosphere:
         
         self.R_beta = self.n_beta/self.n_R
 
+        self.ux_tilde = jnp.fft.fft(self.ux, axis=0) * self.dx
+        self.uy_tilde = jnp.fft.fft(self.uy, axis=0) * self.dx
+        self.zet_tilde = jnp.fft.fft(self.zeta, axis=0) * self.dx
+        self.e_tilde = (self.ux_tilde**2 + self.uy_tilde**2) * 1/2
+
+        self.z_tilde = (self.zet_tilde**2) * 1/2
+        self.rho_e = 1/(2*PI)**2 * jnp.abs(self.e_tilde)**2
+        self.rho_z =  1/(2*PI)**2 * jnp.abs(self.z_tilde)**2
+        
+        nbins=50
+        bins = np.linspace(0, self.kx.max(), nbins+1)
+        k_center = 0.5*(bins[:-1] + bins[1:])
+        E_k = np.zeros(nbins)
+        Z_k = np.zeros(nbins)
+        for i in range(nbins):
+            mask = (self.k1 >= bins[i]) & (self.k1 < bins[i+1])
+            E_k[i] = np.array(self.rho_e)[mask].sum()
+            Z_k[i] = np.array(self.rho_z)[mask].sum()
+
+        E_k = self.rho_e.mean(axis=0)
+        Z_k = self.rho_z.mean(axis=0)
+
+        kk = self.kx.squeeze(axis=1)
+
+        mask = kk >= 0
+        E_k = E_k[mask]
+        Z_k = Z_k[mask]
+        kk = kk[mask]
+    
+        self.e_k = np.array(E_k)
+        self.z_k = np.array(Z_k)
+        self.kk = kk
+
+
         ds_step = xr.Dataset(
             data_vars={
-                "zeta": (("x", "y"), np.array(self.zeta), {"units": "dimless", "long_name": "Vorticity"}),
-                "ux": (("x", "y"), np.array(self.ux), {"units": "dimless", "long_name": "Velocity on X axis"}),
-                "uy": (("x", "y"), np.array(self.uy), {"units": "dimless", "long_name": "Velocity on Y axis"}),
-                "u": (("x", "y"), np.array(self.u), {"units": "dimless", "long_name": "Absolute velocity"}),
+                "zeta": (("x", "y"), np.array(self.zeta.T), {"units": "dimless", "long_name": "Vorticity"}),
+                "ux": (("x", "y"), np.array(self.ux.T), {"units": "dimless", "long_name": "Velocity on X axis"}),
+                "uy": (("x", "y"), np.array(self.uy.T), {"units": "dimless", "long_name": "Velocity on Y axis"}),
+                "u": (("x", "y"), np.array(self.u.T), {"units": "dimless", "long_name": "Absolute velocity"}),
                 "R_beta": (("t"), np.array([self.R_beta]), {"units": "dimless", "long_name": "R beta"}),
             },
             coords={
@@ -367,7 +409,7 @@ class Atmosphere:
         self.ds = xr.merge([self.ds_param, self.ds_grid, self.ds_field])
         self.ds.to_netcdf(f"data/{self.name}.nc", mode="w")
 
-    def animate(self, field_name, save=False):
+    def animate(self, field_name, save=False, fps=30):
         # достаём данные из xarray
         field = self.ds[field_name].values  # форма: (Nt, Nx, Ny)
         Nt = field.shape[0]
@@ -397,16 +439,46 @@ class Atmosphere:
         )
 
         if save:
-            ani.save("zeta_animation.mp4", writer="ffmpeg", fps=15)
+            ani.save(f"{field_name}_animation.mp4", writer="ffmpeg", fps=fps)
         
         ani_html = HTML(ani.to_html5_video())
         plt.close(fig)
 
         return ani_html
     
-    def plot_zeta(self, show=True, save=False):
+    def plot(self, field_name, show=True, save=False):
+        # достаём данные из xarray
+        field = self.ds[field_name].values  # форма: (Nt, Nx, Ny)
+        Nt = field.shape[0]
+
+        # Рисуем фигуру
+        fig, ax = plt.subplots(figsize=(6,5))
+
+        # фиксируем цветовую шкалу — иначе картинка будет «прыгать»
+        vmax = np.abs(field).max()
+        vmin = np.abs(field).min()
+        if field_name != 'u':
+            vmin = -vmax
+
+        im = ax.imshow(field[0], origin="lower", cmap="RdBu_r",
+                    vmin=vmin, vmax=vmax)
+
+        ax.set_title(f'{field_name}')
+        plt.colorbar(im, ax=ax)
+
+        im.set_data(field[-1])
+        ax.set_title(f"t = {float(self.ds['t'][-1]):.2f} | R_beta = {float(self.ds['R_beta'][-1]):.2f}")
+        
+        if save:
+            plt.savefig(f'{field_name}.png')
+        if show:
+            plt.show()
+    
+    
+    def plot_zeta(self, show=True, save=False, levels=60):
+        
         plt.figure(figsize=(6,5))
-        plt.contourf(np.array(self.X), np.array(self.Y), np.array(self.zeta), levels=60, cmap='seismic')
+        plt.contourf(np.array(self.X), np.array(self.Y), np.array(self.zeta), levels=levels, cmap='RdBu_r')
         plt.colorbar()
         plt.title("Vorticity")
         if save:
@@ -414,9 +486,9 @@ class Atmosphere:
         if show:
             plt.show()
 
-    def plot_U(self, show=True, save=False):
+    def plot_U(self, show=True, save=False, levels=60):
         plt.figure(figsize=(6,5))
-        plt.contourf(np.array(self.X), np.array(self.Y), np.array(self.u), levels=60, cmap='seismic')
+        plt.contourf(np.array(self.X), np.array(self.Y), np.array(self.u), levels=levels, cmap='RdBu_r')
         plt.colorbar()
         plt.title("U(x,y)")
         if save:
@@ -424,9 +496,9 @@ class Atmosphere:
         if show:
             plt.show()
     
-    def plot_Ux(self, show=True, save=False):
+    def plot_Ux(self, show=True, save=False, levels=60):
         plt.figure(figsize=(6,5))
-        plt.contourf(np.array(self.X), np.array(self.Y), np.array(self.ux), levels=60, cmap='seismic')
+        plt.contourf(np.array(self.X), np.array(self.Y), np.array(self.ux), levels=levels, cmap='RdBu_r')
         plt.colorbar()
         plt.title("u(x,y)")
         if save:
@@ -434,12 +506,30 @@ class Atmosphere:
         if show:
             plt.show()
     
-    def plot_Uy(self, show=True, save=False):
+    def plot_Uy(self, show=True, save=False, levels=60):
         plt.figure(figsize=(6,5))
-        plt.contourf(np.array(self.X), np.array(self.Y), np.array(self.uy), levels=60, cmap='seismic')
+        plt.contourf(np.array(self.X), np.array(self.Y), np.array(self.uy), levels=levels, cmap='seismic')
         plt.colorbar()
         plt.title("v(x,y)")
         if save:
             plt.savefig('Uy.png')
+        if show:
+            plt.show()
+
+    def plot_Ek(self, show=True, save=False):
+        plt.figure(figsize=(6,5))
+        plt.loglog(self.kk, self.e_k)
+        plt.title("E(k)")
+        if save:
+            plt.savefig('Ek.png')
+        if show:
+            plt.show()
+
+    def plot_Zk(self, show=True, save=False):
+        plt.figure(figsize=(6,5))
+        plt.loglog(self.kk, self.z_k)
+        plt.title("Z(k)")
+        if save:
+            plt.savefig('Zk.png')
         if show:
             plt.show()

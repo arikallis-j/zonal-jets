@@ -92,7 +92,7 @@ class Atmosphere:
         print(lhs/rhs)
 
     def _init_terms(self):
-        self.a = - self.mu - (-1)**(self.p + 1) * self.nu * self.k2 + self.ikx/self.k2 * self.beta
+        self.a = - self.mu - (-1)**(self.p + 1) * self.nu * self.k2**self.p  + self.ikx/self.k2 * self.beta
          
         @jit
         def b(zeta):

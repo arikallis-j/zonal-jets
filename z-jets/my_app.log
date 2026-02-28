@@ -1,0 +1,8 @@
+2026-01-15 20:53:52.560 | ERROR    | __main__:__init__:13 - Hello, error
+2026-01-15 20:53:52.560 | CRITICAL | __main__:__init__:14 - Hello, critical
+2026-01-15 20:54:02.469 | INFO     | __main__:__init__:8 - Hello, info!
+2026-01-15 20:54:02.470 | SUCCESS  | __main__:__init__:10 - Hello, success
+2026-01-15 20:54:02.470 | WARNING  | __main__:__init__:11 - Hello, warning
+2026-01-15 20:54:02.470 | DEBUG    | __main__:__init__:12 - Hello, debug
+2026-01-15 20:54:02.470 | ERROR    | __main__:__init__:13 - Hello, error
+2026-01-15 20:54:02.471 | CRITICAL | __main__:__init__:14 - Hello, critical
