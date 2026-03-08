@@ -1,30 +1,57 @@
-import xarray as xr
-from zonjets.atm2 import Atmosphere, fft2, ifft2
-import jax.numpy as jnp
-import matplotlib.pyplot as plt
+from qg_atm import *
+from test import test_all
 import numpy as np
 
-# atm = Atmosphere(name='data')
- 
-# u_tilde = fft2(atm.u) * atm.dxdy
-# dudy_tilde = atm.iky * u_tilde
-# dudy = jnp.real(ifft2(dudy_tilde)) * atm.dkdl
+import matplotlib.pyplot as plt
+
+s, f0, beta = 1, 0, 0
+p, nu, r = 1, 0, 0
+kappa = 0
+epsilon = 0
+param = s, f0, beta, p, nu, r, kappa, epsilon, 0, 0, 0
+N, M = 128, 100
+grid = (N, M)
+method = "rk4"
+initial = "dipole"
+forcing = "zero"
+desrciprion = param, grid, method, initial, forcing
+
+atm = Atmosphere().setup(*desrciprion)
+f_T = Integrator().setup(*atm.model(), N=M)
+s_0 = atm.start()
+_, q_hat = s_0
+
+tau = 10
+
+s_k = s_0
+
+for k in range(tau):
+    s_k = f_T(s_k)
+    print(f"t = {k+1}")
+
+_, q_hat_k = s_k
+q = atm._ifft_phys(q_hat_k)
+ux_hat, uy_hat = atm._u_hat(q_hat_k)
+e_hat = np.abs(ux_hat)**2 + np.abs(uy_hat)**2 
+z_hat = np.abs(q_hat)**2 
+ux, uy = atm._ifft_phys(ux_hat), atm._ifft_phys(uy_hat)
+u = np.sqrt(ux**2 + uy**2)
 
 # plt.figure(figsize=(6,5))
-# plt.contourf(np.array(atm.X), np.array(atm.Y), np.array(dudy), levels=60, cmap='RdBu_r')
+# plt.contourf(atm.X, atm.Y, q, levels=50, cmap='coolwarm')
 # plt.colorbar()
 # plt.title("Vorticity")
-# plt.show()
- 
-# for k in range(100):
-#     atm.calc(1000)
-#     print(atm.R_beta)
-#     atm.plot_zeta(show=False, save=True)
-#     atm.plot_U(show=False, save=True)
-#     atm.plot_Ux(show=False, save=True)
-#     atm.plot_Uy(show=False, save=True)
-#     # atm.plot_Ek(show=False, save=True)
-#     # atm.plot_Zk(show=False, save=True)
-#     # if atm.R_beta > 2:
-#     #     break
 
+plt.figure(figsize=(6,5))
+plt.contourf(atm.X, atm.Y, u, levels=50, cmap='coolwarm')
+plt.colorbar()
+plt.title("Velocity")
+
+# n_p = + (atm.N+1)//2
+# n_m = - (atm.N)//2 
+
+# plt.contourf(atm.Kx[:n_p, :n_p], atm.Ky[:n_p, :n_p], e_hat[:n_p, :n_p], levels=50, cmap='coolwarm')
+# plt.colorbar()
+# plt.title("Vorticity")
+
+plt.show()
