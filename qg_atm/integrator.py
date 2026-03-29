@@ -2,8 +2,9 @@
 let: dy_n/dt_n = f(t_n, y_n) 
 -->  y_n+1 = y_n + h * Sum_(i = 1)^S b_i k_i
 """
-import jax.numpy as jnp
 import jax
+import jax.numpy as jnp
+import numpy as np
 from jax import jit, lax
 from functools import partial
 from typing import NamedTuple
