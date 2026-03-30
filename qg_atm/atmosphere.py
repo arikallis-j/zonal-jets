@@ -7,27 +7,15 @@ from functools import partial
 from typing import NamedTuple
 jax.config.update("jax_enable_x64", True)
 
-class PhysicalState(NamedTuple):
+class AtmosphereState(NamedTuple):
+    alpha: np.ndarray
+    t: np.ndarray
     q: np.ndarray
     psi: np.ndarray
     ux: np.ndarray
     uy: np.ndarray
-    X: np.ndarray
-    Y: np.ndarray
-
-class SpectralState(NamedTuple):
-    q_hat: np.ndarray
-    psi_hat: np.ndarray
-    ux_hat: np.ndarray
-    uy_hat: np.ndarray
-    Kx: np.ndarray
-    Ky: np.ndarray
-
-class AtmosphereState(NamedTuple):
-    alpha: np.ndarray
-    t: np.ndarray
-    p: PhysicalState
-    s: SpectralState
+    r: np.ndarray
+    k: np.ndarray
 
 class Scale(NamedTuple):
     N: int
@@ -129,41 +117,22 @@ def make_params(s=1, f0=1, beta=0, kappa=0, p=1, nu=0, r=0, epsilon=0, kf=0, dkf
         raise Exception("s is not sign (+1 or -1)")
 
     return Params(s, f0, beta, p, nu, r, kappa, epsilon, kf, dkf, sigma, initial_seed, forcing_seed)
-
-def make_physical_state(q, psi, ux, uy, X, Y):
-    return PhysicalState(
+        
+def make_atmosphere_state(alpha, t, q, psi, ux, uy, r, k):
+    return AtmosphereState(
+        np.array(alpha),
+        np.array(t),
         np.array(q), 
         np.array(psi), 
         np.array(ux), 
         np.array(uy), 
-        np.array(X),
-        np.array(Y),
-    )
-
-def make_spectral_state(q_hat, psi_hat, ux_hat, uy_hat, Kx, Ky):
-    return SpectralState(
-        np.array(q_hat), 
-        np.array(psi_hat), 
-        np.array(ux_hat), 
-        np.array(uy_hat), 
-        np.array(Kx),
-        np.array(Ky),
-    )
-        
-def make_atmosphere_state(alpha, t, physical, spectral):
-    return AtmosphereState(
-        np.array(alpha),
-        np.array(t),
-        physical,
-        spectral,
+        np.array(r),
+        np.array(k),
     )
 
 def calc_f_cor_hat(params, grid):
-    f_hat = jnp.zeros((grid.N, grid.N), dtype=jnp.complex128)
-    f_hat = f_hat.at[0,0].set(params.s * params.f0 + params.beta * jnp.pi * (grid.N-1)/(grid.N))
-    mask = jnp.logical_and(grid.Kx == 0, grid.Ky != 0)
-    phi = grid.Ky[mask] * (2*jnp.pi/grid.N)
-    f_hat = f_hat.at[mask].set(-(params.beta*jnp.pi)/(grid.N) * (1 - 1j * jnp.sin(phi)/(1 - jnp.cos(phi))))
+    f = params.f0 + params.beta * grid.Y
+    f_hat = fft_phys(f, grid)
     return f_hat
 
 def calc_psi_hat(q_hat, f_hat, params, grid):
@@ -299,9 +268,7 @@ class Atmosphere:
         ux_hat, uy_hat = calc_u_hat(psi_hat, self.grid)
         q, psi = ifft_phys(q_hat, self.grid), ifft_phys(psi_hat, self.grid)
         ux, uy = ifft_phys(ux_hat, self.grid), ifft_phys(uy_hat, self.grid)
-        physical_state = make_physical_state(q, psi, ux, uy, self.grid.X, self.grid.Y)
-        spectral_state = make_spectral_state(q_hat, psi_hat, ux_hat, uy_hat, self.grid.Kx, self.grid.Ky)
-        atmosphere_state = make_atmosphere_state(self.alpha, t, physical_state, spectral_state)
+        atmosphere_state = make_atmosphere_state(self.alpha, t, q, psi, ux, uy, self.grid.r, self.grid.k)
         return atmosphere_state
 
     def start(self, **kwargs):

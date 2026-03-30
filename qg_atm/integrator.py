@@ -16,7 +16,7 @@ class State(NamedTuple):
     y: jnp.ndarray
 
 def make_state(t, y):
-    return State(t, y)
+    return State(jnp.array(t), jnp.array(y))
 
 def rk1(s, f, h):
     t0, y0 = s.t, s.y

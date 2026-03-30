@@ -120,32 +120,35 @@ class StateConfig:
     y: jnp.ndarray
 
 @dataclass
-class PhysicalStateConfig:
+class AtmosphereStateConfig:
+    alpha: np.ndarray
+    t: np.ndarray
     q: np.ndarray
     psi: np.ndarray
     ux: np.ndarray
     uy: np.ndarray
-    X: np.ndarray
-    Y: np.ndarray
-
-@dataclass
-class SpectralStateConfig:
-    q_hat: np.ndarray
-    psi_hat: np.ndarray
-    ux_hat: np.ndarray
-    uy_hat: np.ndarray
-    Kx: np.ndarray
-    Ky: np.ndarray
-
-@dataclass
-class AtmosphereStateConfig:
-    alpha: np.ndarray
-    t: np.ndarray
-    p: PhysicalStateConfig
-    s: SpectralStateConfig
+    r: np.ndarray
+    k: np.ndarray
     
 def to_dict(config):
     return asdict(config)
+
+def make_model():
+    model = ModelConfig(
+            meta = MetaConfig(**DESCRIPT['meta']),
+            scale = ScaleConfig(**DESCRIPT['scale']),
+            params = ParamsConfig(
+                **DESCRIPT['params']['coriolis'], 
+                **DESCRIPT['params']['model'], 
+                **DESCRIPT['params']['seeds'],
+                **DESCRIPT['params']['spectrum'],
+            ),
+            method=DESCRIPT['method'],
+            initial=DESCRIPT['initial'],
+            forcing=DESCRIPT['forcing'],
+    )
+    return model
+
 
 class IOManager:
     def __init__(self, data_path=None, dir_name="data"):
@@ -154,28 +157,26 @@ class IOManager:
         else: 
             self.data_path = f"{data_path}/{dir_name}"
 
-        self.config_path = f"{self.data_path}/config"
-
         if not os.path.exists(self.data_path):
             os.mkdir(self.data_path)
-        
-        if not os.path.exists(self.config_path):
-            os.mkdir(self.config_path)
-
-        with open(f"{self.config_path}/descript.toml", "wb") as f:
-            tomli_w.dump(DESCRIPT, f)
 
     def load_model(self, name=None):
         if name is None:
-            filename = "descript"
+            calc_name = "calc"
         else:
-            filename = f"descript-{name}"
+            calc_name = f"{name}"
 
-        if not os.path.exists(f"{self.config_path}/{filename}.toml"):
-            with open(f"{self.config_path}/{filename}.toml", "wb") as f:
+        calc_path = f"{self.data_path}/{calc_name}"
+        if not os.path.exists(calc_path):
+            os.mkdir(calc_path)
+        
+        filename = "descript"
+
+        if not os.path.exists(f"{calc_path}/{filename}.toml"):
+            with open(f"{calc_path}/{filename}.toml", "wb") as f:
                 tomli_w.dump(DESCRIPT, f)
 
-        with open(f"{self.config_path}/{filename}.toml", "rb") as f:
+        with open(f"{calc_path}/{filename}.toml", "rb") as f:
             descript = tomllib.load(f)
 
         model = ModelConfig(
@@ -196,9 +197,15 @@ class IOManager:
 
     def dump_model(self, model, name=None):
         if name is None:
-            filename = "descript"
+            calc_name = "calc"
         else:
-            filename = f"descript-{name}"
+            calc_name = f"{name}"
+
+        calc_path = f"{self.data_path}/{calc_name}"
+        if not os.path.exists(calc_path):
+            os.mkdir(calc_path)
+        
+        filename = "descript"
 
         descript = {
             'meta': asdict(model.meta),
@@ -231,14 +238,14 @@ class IOManager:
             'forcing': model.forcing,
         }
 
-        with open(f"{self.config_path}/{filename}.toml", "wb") as f:
+        with open(f"{calc_path}/{filename}.toml", "wb") as f:
             tomli_w.dump(descript, f)
 
     def dump_state(self, state, model, all_steps=False, name=None):
         if name is None:
             calc_name = "calc"
         else:
-            calc_name = f"calc-{name}"
+            calc_name = f"{name}"
 
         descript = to_dict(model)
 
@@ -264,11 +271,11 @@ class IOManager:
             f.attrs["t"] = state.t
             f.attrs["descript"] = json.dumps(descript)
 
-    def load_state(self, num=None, name=None):
+    def load_state(self, num=None, name=None, parse_model=False):
         if name is None:
             calc_name = "calc"
         else:
-            calc_name = f"calc-{name}"
+            calc_name = f"{name}"
 
         calc_path = f"{self.data_path}/{calc_name}"
         state_path = f"{calc_path}/states"
@@ -285,22 +292,25 @@ class IOManager:
         
         state = StateConfig(t, y)
 
-        model = ModelConfig(
-            meta = MetaConfig(**descript['meta']),
-            scale = ScaleConfig(**descript['scale']),
-            params = ParamsConfig(**descript['params']),
-            method=descript['method'],
-            initial=descript['initial'],
-            forcing=descript['forcing'],
-        )
+        if parse_model:
+            model = ModelConfig(
+                meta = MetaConfig(**descript['meta']),
+                scale = ScaleConfig(**descript['scale']),
+                params = ParamsConfig(**descript['params']),
+                method=descript['method'],
+                initial=descript['initial'],
+                forcing=descript['forcing'],
+            )
+            return state, model
 
-        return state, model
-
+        else:
+            return state
+            
     def dump_atm_state(self, atm_state, model, all_steps=False, name=None):
         if name is None:
             calc_name = "calc"
         else:
-            calc_name = f"calc-{name}"
+            calc_name = f"{name}"
 
         descript = to_dict(model)
 
@@ -320,33 +330,30 @@ class IOManager:
                 f.attrs["t"] = atm_state.t
                 f.attrs["alpha"] = atm_state.alpha
                 f.attrs["descript"] = json.dumps(descript)
+                f.create_dataset("q", data=atm_state.q)
+                f.create_dataset("psi", data=atm_state.psi)
+                f.create_dataset("ux", data=atm_state.ux)
+                f.create_dataset("uy", data=atm_state.uy)
+                f.create_dataset("r", data=atm_state.r)
+                f.create_dataset("k", data=atm_state.k)
 
-                g_p = f.create_group("physical")
-                for name, value in atm_state.p._asdict().items():
-                    g_p.create_dataset(name, data=value)
-
-                g_s = f.create_group("spectral")
-                for name, value in atm_state.s._asdict().items():
-                    g_s.create_dataset(name, data=value)
-        
         with h5py.File(f"{atm_state_path}/{atm_state_name_last}.h5", "w") as f:
             f.attrs["t"] = atm_state.t
             f.attrs["alpha"] = atm_state.alpha
             f.attrs["descript"] = json.dumps(descript)
+            f.create_dataset("q", data=atm_state.q)
+            f.create_dataset("psi", data=atm_state.psi)
+            f.create_dataset("ux", data=atm_state.ux)
+            f.create_dataset("uy", data=atm_state.uy)
+            f.create_dataset("r", data=atm_state.r)
+            f.create_dataset("k", data=atm_state.k)
 
-            g_p = f.create_group("physical")
-            for name, value in atm_state.p._asdict().items():
-                g_p.create_dataset(name, data=value)
 
-            g_s = f.create_group("spectral")
-            for name, value in atm_state.s._asdict().items():
-                g_s.create_dataset(name, data=value)
-
-    def load_atm_state(self, num=None, name=None):
+    def load_atm_state(self, num=None, name=None, parse_model=False):
         if name is None:
             calc_name = "calc"
         else:
-            calc_name = f"calc-{name}"
+            calc_name = f"{name}"
 
         calc_path = f"{self.data_path}/{calc_name}"
         atm_state_path = f"{calc_path}/atm-states"
@@ -360,32 +367,30 @@ class IOManager:
             t = np.array(float(f.attrs["t"]))
             alpha = np.array(float(f.attrs["alpha"]))
             descript = json.loads(f.attrs["descript"])
-            physical = PhysicalStateConfig(**{
-                k: f["physical"][k][:]
-                for k in f["physical"]
-            })
+            q = np.array(f["q"][:])
+            psi = np.array(f["psi"][:])
+            ux = np.array(f["ux"][:])
+            uy = np.array(f["uy"][:])
+            r = np.array(f["r"][:])
+            k = np.array(f["k"][:])
 
-            spectral = SpectralStateConfig(**{
-                k: f["spectral"][k][:]
-                for k in f["spectral"]
-            })
+        atm_state = AtmosphereStateConfig(alpha, t, q, psi, ux, uy, r, k)
 
-        
-        atm_state = AtmosphereStateConfig(alpha, t, physical, spectral)
+        if parse_model:
+            model = ModelConfig(
+                meta = MetaConfig(**descript['meta']),
+                scale = ScaleConfig(**descript['scale']),
+                params = ParamsConfig(**descript['params']),
+                method=descript['method'],
+                initial=descript['initial'],
+                forcing=descript['forcing'],
+            )
+            return atm_state, model
 
-        model = ModelConfig(
-            meta = MetaConfig(**descript['meta']),
-            scale = ScaleConfig(**descript['scale']),
-            params = ParamsConfig(**descript['params']),
-            method=descript['method'],
-            initial=descript['initial'],
-            forcing=descript['forcing'],
-        )
-
-        return atm_state, model
+        else:
+            return atm_state
 
     def state_to_dataset(self, atm_state, model):
-        p, s = atm_state.p, atm_state.s
         descript = to_dict(model)
         dataset_descript = {}
 
@@ -396,25 +401,22 @@ class IOManager:
             else:
                 dataset_descript[key] = value
 
-        ds = xr.Dataset(
-            data_vars={
-                "q":   (("x", "y"), p.q),
-                "psi": (("x", "y"), p.psi),
-                "ux":  (("x", "y"), p.ux),
-                "uy":  (("x", "y"), p.uy),
+        kx, ky = np.meshgrid(atm_state.k, atm_state.k, indexing='ij')
+        k1 = np.sqrt(kx**2 + ky**2)
 
-                "q_hat":   (("kx", "ky"), s.q_hat),
-                "psi_hat": (("kx", "ky"), s.psi_hat),
-                "ux_hat":  (("kx", "ky"), s.ux_hat),
-                "uy_hat":  (("kx", "ky"), s.uy_hat),
+        ds_state = xr.Dataset(
+            data_vars={
+                "q":   (("x", "y"), atm_state.q),
+                "psi": (("x", "y"), atm_state.psi),
+                "ux":  (("x", "y"), atm_state.ux),
+                "uy":  (("x", "y"), atm_state.uy),
             },
 
             coords={
-                "x": p.X[:, 0],
-                "y": p.Y[0, :],
-
-                "kx": s.Kx[:, 0],
-                "ky": s.Ky[0, :],
+                "x": atm_state.r,
+                "y": atm_state.r,
+                "k": atm_state.k,
+                "k_abs": np.arange((np.floor(k1).astype(int)).max() + 1),
             },
 
             attrs={
@@ -423,118 +425,117 @@ class IOManager:
             }
         )
 
-        return ds
+        ds_state = ds_state.expand_dims(t=[atm_state.t])
 
-    def encode_complex_dataset(self, ds):
-        ds = ds.copy()
-        for var in list(ds.data_vars):
-            if np.iscomplexobj(ds[var]):
-                ds[var + "_real"] = ds[var].real
-                ds[var + "_imag"] = ds[var].imag
-                ds = ds.drop_vars(var)
-        return ds
-
-    def decode_complex_dataset(self, ds):
-        ds = ds.copy()
-        vars_to_check = list(ds.data_vars)
-
-        for var in vars_to_check:
-            if var.endswith("_real"):
-                base = var[:-5]
-                imag_name = base + "_imag"
-
-                if imag_name in ds:
-                    ds[base] = ds[var] + 1j * ds[imag_name]
-                    ds = ds.drop_vars([var, imag_name])
-        return ds
+        return ds_state
 
     def make_atm_dataset(self, name=None):
         if name is None:
             calc_name = "calc"
         else:
-            calc_name = f"calc-{name}"
+            calc_name = f"{name}"
 
         calc_path = f"{self.data_path}/{calc_name}"
         dataset_path = f"{calc_path}/atm.nc"
 
         datasets = []
-        atm_last, model = self.load_atm_state(name=name)
+        atm_last = self.load_atm_state(name=name)
         T = int(np.round(atm_last.t))
 
-        print("Preparing dataset...")
+        print("\nPreparing dataset...")
         for k in tqdm(range(T+1)):
-            atm_state, model = self.load_atm_state(num=k, name=name)
-            ds = self.state_to_dataset(atm_state, model)
-            ds = ds.expand_dims(t=[atm_state.t])
-            datasets.append(ds)
+            atm_state, model = self.load_atm_state(num=k, name=name, parse_model=True)
+            ds_state = self.state_to_dataset(atm_state, model)
+            datasets.append(ds_state)
+        dataset_full = xr.concat(datasets, dim="t")
 
-        ds_full = xr.concat(datasets, dim="t")
+        return dataset_full
 
-        ds_real = self.encode_complex_dataset(ds_full)
+    def dump_atm_dataset(self, dataset, ds_name=None, name=None):
+        if name is None:
+            calc_name = "calc"
+        else:
+            calc_name = f"{name}"
+
+        calc_path = f"{self.data_path}/{calc_name}"
+
+        if ds_name is None:
+            dataset_path = f"{calc_path}/atm.nc"
+        else:
+            datasets_path = f"{calc_path}/datasets"
+            if not os.path.exists(datasets_path):
+                os.mkdir(datasets_path)
+            dataset_path = f"{datasets_path}/atm-{ds_name}.nc"
+
         encoding = {
             var: {"zlib": True, "complevel": 4}
-            for var in ds_real.data_vars
+            for var in dataset.data_vars
         }
-        ds_real.to_netcdf(dataset_path, engine="netcdf4", encoding=encoding)
-        print("Prepared.")
-        return ds_full
+
+        dataset.to_netcdf(dataset_path, engine="netcdf4", encoding=encoding)
 
 
-    def load_atm_dataset(self, name=None):
+    def load_atm_dataset(self, ds_name=None, name=None, parse_model=False):
         if name is None:
             calc_name = "calc"
         else:
-            calc_name = f"calc-{name}"
+            calc_name = f"{name}"
 
         calc_path = f"{self.data_path}/{calc_name}"
-        dataset_path = f"{calc_path}/atm.nc"
+
+        if ds_name is None:
+            dataset_path = f"{calc_path}/atm.nc"
+        else:
+            datasets_path = f"{calc_path}/datasets"
+            dataset_path = f"{datasets_path}/atm-{ds_name}.nc"
         
-        print("Loading dataset...")
-        ds_real = xr.open_dataset(dataset_path).load()
-        ds = self.decode_complex_dataset(ds_real)
+        print("\nLoading dataset...")
+        ds = xr.open_dataset(dataset_path).load()
         descript_dataset = ds.attrs
-        print("Loaded.")
         
-        descript = {}
-        for key, value in descript_dataset.items():
-            if len(key.split("."))==2:
-                key_maj, key_min = key.split(".")
-                if not (key_maj in descript):
-                    descript[key_maj] = {}
-                if isinstance(value, np.int64):
-                    descript[key_maj][key_min] = int(value)
-                elif isinstance(value, np.float64):
-                    descript[key_maj][key_min] = float(value)
+        if parse_model:
+            descript = {}
+            for key, value in descript_dataset.items():
+                if len(key.split("."))==2:
+                    key_maj, key_min = key.split(".")
+                    if not (key_maj in descript):
+                        descript[key_maj] = {}
+                    if isinstance(value, np.int64):
+                        descript[key_maj][key_min] = int(value)
+                    elif isinstance(value, np.float64):
+                        descript[key_maj][key_min] = float(value)
+                    else:
+                        descript[key_maj][key_min] = value
                 else:
-                    descript[key_maj][key_min] = value
-            else:
-                descript[key] = value
+                    descript[key] = value
 
-        model = ModelConfig(
-            meta = MetaConfig(**descript['meta']),
-            scale = ScaleConfig(**descript['scale']),
-            params = ParamsConfig(**descript['params']),
-            method=descript['method'],
-            initial=descript['initial'],
-            forcing=descript['forcing'],
-        )
+            model = ModelConfig(
+                meta = MetaConfig(**descript['meta']),
+                scale = ScaleConfig(**descript['scale']),
+                params = ParamsConfig(**descript['params']),
+                method=descript['method'],
+                initial=descript['initial'],
+                forcing=descript['forcing'],
+            )
+            return ds, model
+        else:
+            return ds
 
-        return ds, model
-
-    def print_atm_state(self, state, key, cmap='balance', levels=50, colorbar=True, range_val = "all", title="", all_steps=True, name=None):
+    def print_state_field(self, ds_state, key, cmap='balance', levels=50, colorbar=True, range_val = "all", title="", all_steps=False, show=False, name=None):
         if name is None:
             calc_name = "calc"
         else:
-            calc_name = f"calc-{name}"
+            calc_name = f"{name}"
+
         calc_path = f"{self.data_path}/{calc_name}"
-        graph_path = f"{calc_path}/graph"
+        graph_path = f"{calc_path}/graphs"
         if not os.path.exists(graph_path):
             os.mkdir(graph_path)
 
-        graph_name_step = f"atm-{key}_{int(np.round(state.t))}.png"
+        graph_name_step = f"atm-{key}_{int(np.round(ds_state['t']))}.png"
         graph_name_last = f"atm-{key}.png"
 
-        z = getattr(state.p, key)
+        z = ds_state[key].isel(t=0)
         fig, ax = plt.subplots(figsize=(5, 5))
         if isinstance(range_val, tuple):
             vmin, vmax = range_val
@@ -543,11 +544,11 @@ class IOManager:
             vmax = float(np.max(z))
 
         if colorbar:
-            im = ax.contourf(state.p.X, state.p.Y, z, vmin=vmin, vmax=vmax, cmap=check_cmap(cmap), levels=levels)
+            im = ax.contourf(ds_state["x"], ds_state["y"], z.T, vmin=vmin, vmax=vmax, cmap=check_cmap(cmap), levels=levels)
             fig.colorbar(im, ax=ax)
-        
-        ax.contourf(state.p.X, state.p.Y, z, vmin=vmin, vmax=vmax, cmap=check_cmap(cmap), levels=levels)
-        base_title = f"t = {int(np.round(state.t))}"
+                        
+        ax.contourf(ds_state["x"], ds_state["y"], z.T, vmin=vmin, vmax=vmax, cmap=check_cmap(cmap), levels=levels)
+        base_title = f"t = {int(np.round(ds_state['t']))}"
         full_title = base_title + title
         ax.set_xlabel('X')
         ax.set_ylabel('Y')
@@ -558,13 +559,79 @@ class IOManager:
 
         plt.savefig(f"{graph_path}/{graph_name_last}")
 
+        if show:
+            plt.show()
+
         plt.close()
 
-    def print_atm_dataset(self, ds, key, cmap='balance', levels=50, colorbar=True, range_val = "all", fps=30, title="", name=None):
+    def print_state_quantity(self, ds_state, key, style='seaborn-v0_8', color='blue', range_val = (None, None), title="", log=None, all_steps=False, show=False, name=None):
+        plt.style.use(style)
+        
         if name is None:
             calc_name = "calc"
         else:
-            calc_name = f"calc-{name}"
+            calc_name = f"{name}"
+        calc_path = f"{self.data_path}/{calc_name}"
+        graph_path = f"{calc_path}/graphs"
+        if not os.path.exists(graph_path):
+            os.mkdir(graph_path)
+
+        graph_name_step = f"atm-{key}_{int(np.round(ds_state['t']))}.png"
+        graph_name_last = f"atm-{key}.png"
+
+        z = ds_state[key].isel(t=0)
+        fig, ax = plt.subplots(figsize=(5, 5))
+        if isinstance(range_val, tuple):
+            vmin, vmax = range_val
+            if not((vmin is None) and (vmax is None)):
+                if vmin is None:
+                    vmin = float(np.min(z)) 
+                if vmax is None:
+                    vmax = float(np.max(z))
+        else:
+            vmin = float(z.min()) 
+            vmax = float(z.max())
+        
+        if log is None:
+            ax.plot(z, color=color)
+            ax.set_ylim(vmin, vmax)
+        elif log == "log":
+            ax.semilogy(z, color=color)
+            if not(isinstance(range_val, tuple) and range_val[0] is None and range_val[1] is None):
+                dvmin, dvmax = 0, 10**(np.log10(vmax) + 0.5)
+                if vmin<=0:
+                    dvmin = vmin+10**(np.log10(vmax) - 5)
+                ax.set_ylim(vmin + dvmin, vmax + dvmax)
+        elif log == "loglog":
+            ax.loglog(z, color=color)
+            if not(isinstance(range_val, tuple) and range_val[0] is None and range_val[1] is None):
+                dvmin, dvmax = 0, 10**(np.log10(vmax) + 0.5)
+                if vmin<=0:
+                    dvmin = vmin+10**(np.log10(vmax) - 5)
+                ax.set_ylim(vmin + dvmin, vmax + dvmax)
+            
+        base_title = f"t = {int(np.round(ds_state['t']))}"
+        full_title = base_title + title
+        ax.set_xlabel(z.dims[0])
+        ax.set_ylabel(key)
+        ax.set_title(full_title)
+        
+        if all_steps:
+            plt.savefig(f"{graph_path}/{graph_name_step}")
+
+        plt.savefig(f"{graph_path}/{graph_name_last}")
+        
+        if show:
+            plt.show()
+            
+        plt.close()
+        
+
+    def print_dataset_field(self, ds, key, cmap='balance', levels=50, colorbar=True, range_val = "all", fps=30, title="", name=None):
+        if name is None:
+            calc_name = "calc"
+        else:
+            calc_name = f"{name}"
 
         calc_path = f"{self.data_path}/{calc_name}"
         
@@ -589,7 +656,7 @@ class IOManager:
             im = ax.contourf(
                 ds["x"],
                 ds["y"],
-                z.isel(t=0),
+                z.isel(t=0).T,
                 vmin=vmin,
                 vmax=vmax,
                 cmap=check_cmap(cmap),
@@ -602,7 +669,7 @@ class IOManager:
             ax.contourf(
                 ds["x"],
                 ds["y"],
-                z.isel(t=i),
+                z.isel(t=i).T,
                 vmin=vmin,
                 vmax=vmax,
                 cmap=check_cmap(cmap),
@@ -617,4 +684,114 @@ class IOManager:
         ani = FuncAnimation(fig, animate, frames=len(ds["t"]))
         print(f"Saving animation of {key}...")
         ani.save(f"{calc_path}/{graph_name}", fps=fps)
-        print("Saved.")
+
+    def print_dataset_quantity(self, ds, key, style='seaborn-v0_8', color='blue', range_val = (None, None), title="", log=None, fps=30, name=None):
+        plt.style.use(style)
+        if name is None:
+            calc_name = "calc"
+        else:
+            calc_name = f"{name}"
+
+        calc_path = f"{self.data_path}/{calc_name}"
+        
+        graph_name = f"atm-{key}.mp4"
+
+        fig, ax = plt.subplots(figsize=(5, 5))
+        z = ds[key]
+
+        if isinstance(range_val, tuple):
+            vmin, vmax = range_val
+            if not((vmin is None) and (vmax is None)):
+                if vmin is None:
+                    vmin = float(np.min(z)) 
+                if vmax is None:
+                    vmax = float(np.max(z))
+        elif range_val == "start":
+            vmin = float(z.isel(t=0).min()) 
+            vmax = float(z.isel(t=0).max())
+        elif range_val == "end":
+            vmin = float(z.isel(t=len(ds["t"])-1).min()) 
+            vmax = float(z.isel(t=len(ds["t"])-1).max())
+        else:
+            vmin = float(z.min()) 
+            vmax = float(z.max())
+            
+        def animate(i):
+            ax.clear()
+            if log is None:
+                ax.plot(z.isel(t=i), color=color)
+                ax.set_ylim(vmin, vmax)
+            elif log == "log":
+                ax.semilogy(z.isel(t=i), color=color)
+                dvmin, dvmax = 0, 10**(np.log10(vmax) + 0.5)
+                if vmin<=0:
+                    dvmin = vmin+10**(np.log10(vmax) - 5)
+                ax.set_ylim(vmin + dvmin, vmax + dvmax)
+            elif log == "loglog":
+                ax.loglog(z.isel(t=i), color=color)
+                dvmin, dvmax = 0, 10**(np.log10(vmax) + 0.5)
+                if vmin<=0:
+                    dvmin = vmin+10**(np.log10(vmax) - 5)
+                ax.set_ylim(vmin + dvmin, vmax + dvmax)
+            base_title = f"t = {int(np.round(ds['t'].values[i]))}"
+            full_title = base_title + title
+            ax.set_xlabel(z.isel(t=0).dims[0])
+            ax.set_ylabel(key)
+            ax.set_title(full_title)
+
+        ani = FuncAnimation(fig, animate, frames=len(ds["t"]))
+        print(f"Saving animation of {key}...")
+        ani.save(f"{calc_path}/{graph_name}", fps=fps)
+
+    def print_dataset_statistics(self, ds, key, style='seaborn-v0_8', color='blue', range_val = (None, None), title="", log=None, name=None):
+        plt.style.use(style)
+        if name is None:
+            calc_name = "calc"
+        else:
+            calc_name = f"{name}"
+
+        calc_path = f"{self.data_path}/{calc_name}"
+        
+        graph_name = f"atm-{key}.png"
+
+        fig, ax = plt.subplots(figsize=(5, 5))
+        z = ds[key]
+
+        if isinstance(range_val, tuple):
+            vmin, vmax = range_val
+            if not((vmin is None) and (vmax is None)):
+                if vmin is None:
+                    vmin = float(np.min(z)) 
+                if vmax is None:
+                    vmax = float(np.max(z))
+        else:
+            vmin = float(z.min()) 
+            vmax = float(z.max())
+            
+        if log is None:
+            ax.plot(z, color=color)
+            if not(isinstance(range_val, tuple) and range_val[0] is None and range_val[1] is None):
+                dvmin, dvmax = 0, (vmax-vmin)/5
+                ax.set_ylim(vmin, vmax+dvmax)
+        elif log == "log":
+            ax.semilogy(z, color=color)
+
+            if not(isinstance(range_val, tuple) and range_val[0] is None and range_val[1] is None):
+                dvmin, dvmax = 0, 10**(np.log10(vmax) + 0.5)
+                if vmin<=0:
+                    dvmin = vmin+10**(np.log10(vmax) - 5)
+                ax.set_ylim(vmin + dvmin, vmax + dvmax)
+        elif log == "loglog":
+            ax.loglog(z, color=color)
+            if not(isinstance(range_val, tuple) and range_val[0] is None and range_val[1] is None):
+                dvmin, dvmax = 0, 10**(np.log10(vmax) + 0.5)
+                if vmin<=0:
+                    dvmin = vmin+10**(np.log10(vmax) - 5)
+                ax.set_ylim(vmin + dvmin, vmax + dvmax)
+
+        ax.set_xlabel(z.dims[0])
+        ax.set_ylabel(key)
+        ax.set_title(title)
+
+        plt.savefig(f"{calc_path}/{graph_name}")
+        plt.close()
