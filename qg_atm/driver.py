@@ -14,9 +14,11 @@ NAME = 'report'
 
 
 class Config:
-    def __init__(self, experiment=None, descript = None, print_scan=True, print_state=None, print_dataset=None, ps_args=None, pds_args=None, first_state=None):
+    def __init__(self, experiment=None, descript = None, n_iter= None, t_iter=None, print_scan=True, print_state=None, print_dataset=None, ps_args=None, pds_args=None, first_state=None):
         self.experiment = experiment
         self.descript = descript
+        self.n_iter = n_iter
+        self.t_iter = t_iter
         self.model = make_model()
         self.print_scan = print_scan
         self.print_state = print_state
@@ -52,19 +54,26 @@ class Driver:
             self.config = config
         self.name = self.config.experiment
         self.model = self.config.model
+        if self.config.t_iter is None:
+            self.t_iter = 1
+        else: 
+            self.t_iter = self.config.t_iter
 
         model = self.model
         params = make_params(**to_dict(model.params))
         scale = make_scale(**to_dict(model.scale))
         self.atm.setup(params, scale, model.method, model.initial, model.forcing)
-        self.Int.setup(*self.atm.model(), n_steps=scale.M)
+        self.Int.setup(*self.atm.model(), n_steps=scale.M*self.t_iter)
         self.io.dump_model(model, name=self.name)
         self.state = make_state(*self.atm.start())
         self.f_int = self.Int.f_int()
+        self.devices = self.Int.devices()
         
         return self
 
     def run(self, n_iter=1):
+        if self.config.n_iter is not None:
+            n_iter = self.config.n_iter
         state = self.dataload()
         state = self.preprocess(state, n_iter)
         for k in range(n_iter):
@@ -72,15 +81,14 @@ class Driver:
         return self.postprocess(state)
 
     def dataload(self):
-        if self.config.first_state is None:
-            state = self.state
-        elif isinstance(self.config.first_state, int):
+        if isinstance(self.config.first_state, int):
             state_data = self.io.load_state(self.config.first_state, name=self.name)
             state = make_state(**to_dict(state_data))
-        else:
+        elif self.config.first_state == "last":
             state_data = self.io.load_state(name=self.name)
             state = make_state(**to_dict(state_data))
-
+        else:
+            state = self.state
         return state
 
     def preprocess(self, state, n_iter):
@@ -100,7 +108,7 @@ class Driver:
         return new_state
 
     def postprocess(self, state=None):
-        dataset = self.io.make_atm_dataset(name=self.name)
+        dataset = self.io.make_atm_dataset(name=self.name, step=self.t_iter)
         dataset = self.calc(dataset)
         self.io.dump_atm_dataset(dataset, name=self.name)
         if self.config.print_dataset is not None:
@@ -111,8 +119,8 @@ class Driver:
         if self.config.print_scan is False:
             return None
         ds_state = self.io.state_to_dataset(self.atm.calc(s), self.model)
-        KE = float(self.diag.mean_energy(ds_state))
-        VE = float(self.diag.mean_enstrophy(ds_state))
+        KE = float(self.diag.mean_energy(ds_state)[0])
+        VE = float(self.diag.mean_enstrophy(ds_state)[0])
         time_iter = self.timer.check()
         if k_iter == 0:
             self.speed = 0
@@ -192,8 +200,7 @@ class Driver:
             self.io.print_dataset_field(dataset, 'u', colorbar=cfg['colorbar'], title=" | Velocity", cmap='speed', fps=cfg['fps'], range_val=cfg['u_range'], name=self.name)
             self.io.print_dataset_quantity(dataset, "e_spec", color=cfg['e_color'], title=" | Energy Spectrum", log='loglog', fps=cfg['fps'], range_val="all", name=self.name)
             self.io.print_dataset_quantity(dataset, "z_spec", color=cfg['z_color'], title=" | Enstrophy Spectrum", log='loglog', fps=cfg['fps'], range_val="all", name=self.name)
-            self.io.print_dataset_statistics(dataset,'e_mean', color=cfg['e_color'], range_val=(0, None), title="Mean Energy", name=self.name)
-            self.io.print_dataset_statistics(dataset,'z_mean', color=cfg['z_color'], range_val=(0, None), title="Mean Enstrophy", name=self.name)
+            self.io.print_dataset_statistics(dataset,'e_mean', color=cfg['e_color'], range_val=(0, None), title="Mean Energy", name=self.name, log="log")
+            self.io.print_dataset_statistics(dataset,'z_mean', color=cfg['z_color'], range_val=(0, None), title="Mean Enstrophy", name=self.name, log="log")
             self.io.print_dataset_quantity(dataset, "e_flow", color=cfg['e_color'], title=" | Energy Flow", fps=cfg['fps'], range_val="all", name=self.name)
             self.io.print_dataset_quantity(dataset, "z_flow", color=cfg['z_color'], title=" | Enstrophy Flow", fps=cfg['fps'], range_val="all", name=self.name)
-

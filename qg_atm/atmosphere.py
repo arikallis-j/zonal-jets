@@ -190,9 +190,10 @@ def s_dipole(params, grid, rho = 0.5, w = 0.2):
     q_hat_0 = fft_phys(q_0, grid)
     return (jnp.array(0.0), q_hat_0)
 
-def s_random(params, grid):
+def s_random(params, grid, A = 1):
     key_state = rnd.key(params.initial_seed)
-    q_0 = 2*rnd.uniform(key_state, (grid.N, grid.N)) - 1
+    q_0 = A*(2*rnd.uniform(key_state, (grid.N, grid.N)) - 1)
+    q_0 -= q_0.mean()
     q_hat_0 = fft_phys(q_0, grid)
     return (jnp.array(0.0), q_hat_0)
 

@@ -13,7 +13,7 @@ DESCRIPT = {
     'meta': {
         'name': 'qg-model',
         'coord': 'cartesian',
-        'approach': 'spectral-1',
+        'approach': 'spectral-1-layer',
     },
     'scale': {
         'N': 10,
@@ -429,7 +429,7 @@ class IOManager:
 
         return ds_state
 
-    def make_atm_dataset(self, name=None):
+    def make_atm_dataset(self, name=None, step=1):
         if name is None:
             calc_name = "calc"
         else:
@@ -444,6 +444,8 @@ class IOManager:
 
         print("\nPreparing dataset...")
         for k in tqdm(range(T+1)):
+            if k%step!=0:
+                continue
             atm_state, model = self.load_atm_state(num=k, name=name, parse_model=True)
             ds_state = self.state_to_dataset(atm_state, model)
             datasets.append(ds_state)
@@ -532,7 +534,7 @@ class IOManager:
         if not os.path.exists(graph_path):
             os.mkdir(graph_path)
 
-        graph_name_step = f"atm-{key}_{int(np.round(ds_state['t']))}.png"
+        graph_name_step = f"atm-{key}_{int(np.round(ds_state['t'][0]))}.png"
         graph_name_last = f"atm-{key}.png"
 
         z = ds_state[key].isel(t=0)
@@ -548,7 +550,7 @@ class IOManager:
             fig.colorbar(im, ax=ax)
                         
         ax.contourf(ds_state["x"], ds_state["y"], z.T, vmin=vmin, vmax=vmax, cmap=check_cmap(cmap), levels=levels)
-        base_title = f"t = {int(np.round(ds_state['t']))}"
+        base_title = f"t = {int(np.round(ds_state['t'][0]))}"
         full_title = base_title + title
         ax.set_xlabel('X')
         ax.set_ylabel('Y')
@@ -576,7 +578,7 @@ class IOManager:
         if not os.path.exists(graph_path):
             os.mkdir(graph_path)
 
-        graph_name_step = f"atm-{key}_{int(np.round(ds_state['t']))}.png"
+        graph_name_step = f"atm-{key}_{int(np.round(ds_state['t'][0]))}.png"
         graph_name_last = f"atm-{key}.png"
 
         z = ds_state[key].isel(t=0)
@@ -610,7 +612,7 @@ class IOManager:
                     dvmin = vmin+10**(np.log10(vmax) - 5)
                 ax.set_ylim(vmin + dvmin, vmax + dvmax)
             
-        base_title = f"t = {int(np.round(ds_state['t']))}"
+        base_title = f"t = {int(np.round(ds_state['t'][0]))}"
         full_title = base_title + title
         ax.set_xlabel(z.dims[0])
         ax.set_ylabel(key)
@@ -769,12 +771,12 @@ class IOManager:
             vmax = float(z.max())
             
         if log is None:
-            ax.plot(z, color=color)
+            ax.plot(z.coords[z.dims[0]], z, color=color)
             if not(isinstance(range_val, tuple) and range_val[0] is None and range_val[1] is None):
                 dvmin, dvmax = 0, (vmax-vmin)/5
                 ax.set_ylim(vmin, vmax+dvmax)
         elif log == "log":
-            ax.semilogy(z, color=color)
+            ax.semilogy(z.coords[z.dims[0]], z, color=color)
 
             if not(isinstance(range_val, tuple) and range_val[0] is None and range_val[1] is None):
                 dvmin, dvmax = 0, 10**(np.log10(vmax) + 0.5)
@@ -782,7 +784,7 @@ class IOManager:
                     dvmin = vmin+10**(np.log10(vmax) - 5)
                 ax.set_ylim(vmin + dvmin, vmax + dvmax)
         elif log == "loglog":
-            ax.loglog(z, color=color)
+            ax.loglog(z.coords[z.dims[0]], z, color=color)
             if not(isinstance(range_val, tuple) and range_val[0] is None and range_val[1] is None):
                 dvmin, dvmax = 0, 10**(np.log10(vmax) + 0.5)
                 if vmin<=0:

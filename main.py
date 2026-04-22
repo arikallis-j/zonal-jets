@@ -1,23 +1,27 @@
-from qg_atm import *
-from test import test_all
+"""
+conda install -c conda-forge numpy matplotlib h5py xarray cmocean tqdm netCDF4 ffmpeg
+pip install -U tomli_w "jax[cuda12]"
+"""
+import qg_atm as qg
 
-import jax.numpy as jnp
-import numpy as np
-import matplotlib.pyplot as plt
-from tqdm import tqdm
-
-descript = {
-    'N': 256,
-    'M': 20,
-    'initial': 'random',
+config = {
+    'experiment': "dissipation-free",
+    'n_iter': 100,
+    't_iter': 100,
+    'descript': {
+        'N': 256,
+        'M': 10,
+        'initial': 'random',
+    },
+    'first_state': "last",
+    'print_dataset': "all",
+    'print_state': "std",
+    'pds_args': {
+        'q_range': "end", 
+        'u_range': "end", 
+        'q_cmap':"balance"
+    },
 }
 
-config = Config(
-    experiment="stational-turbulence",
-    descript=descript, 
-    print_dataset="std", 
-    pds_args={'q_range': "end", 'u_range': "end", 'q_cmap':"balance"},
-)
-
-driver = Driver(config)
-result = driver.run(n_iter=100)
+driver = qg.Driver(qg.Config(**config))
+result = driver.run()
