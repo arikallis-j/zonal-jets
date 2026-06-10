@@ -4,6 +4,9 @@ pip install -U tomli_w "jax[cuda12]"
 """
 import qg_atm as qg
 
+# with open("config.json", "r") as f:
+#     config = json.load(f)
+
 config = {
     'experiment': "dissipation-free",
     'n_iter': 100,

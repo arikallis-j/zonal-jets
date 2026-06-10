@@ -68,6 +68,10 @@ def fft_pad(x, grid):
 def ifft_pad(x_hat, grid):
     return grid.N_pad**2 * jnp.real(jnp.fft.ifft2(x_hat))
 
+def enforce_hermitian(xi_hat):
+    xi_flip = jnp.roll(jnp.roll(xi_hat[::-1, ::-1], 1, axis=0), 1, axis=1)
+    return 0.5 * (xi_hat + jnp.conj(xi_flip))
+
 def pad_spectrum(a, grid):
     n_p = + (grid.N+1)//2
     n_m = - (grid.N)//2 
@@ -214,10 +218,38 @@ def xi_zero(t, q_hat, params, grid):
     return jnp.zeros((grid.N, grid.N))
 
 def xi_random(t, q_hat, params, grid):
-    key, theta = rnd.key(params.forcing_seed), int(2*t/grid.dt)
+    key, theta = rnd.key(params.forcing_seed), jnp.astype(2*t/grid.dt, int)
     step_key = rnd.fold_in(key, theta)
     xi = rnd.uniform(step_key, (grid.N, grid.N))
     xi_hat = fft_phys(xi, grid)
+    return xi_hat
+
+def xi_normal(t, q_hat, params, grid):
+    key = rnd.key(params.forcing_seed)
+    theta = jnp.astype(2 * t / grid.dt, int)
+    step_key = rnd.fold_in(key, theta)
+    key_r, key_i = rnd.split(step_key)
+
+    real = rnd.normal(key_r, (grid.N, grid.N))
+    imag = rnd.normal(key_i, (grid.N, grid.N))
+    xi_hat = real + 1j * imag
+
+    # спектральная маска
+    mask = jnp.exp(-((grid.K1 - params.kf)**2) / (2 * params.dkf**2))
+
+    xi_hat *= mask
+
+    xi_hat = enforce_hermitian(xi_hat)
+
+    xi_hat = xi_hat.at[0, 0].set(0.0)
+
+    norm = jnp.sqrt(
+        jnp.sum(grid.K2 * jnp.abs(xi_hat)**2)
+    )
+
+    xi_hat /= norm
+
+
     return xi_hat
 
 class Atmosphere:
@@ -233,6 +265,7 @@ class Atmosphere:
         self._forcings = {
             "zero": xi_zero,
             "random": xi_random,
+            "normal": xi_normal,
         }
 
         self.alpha = alpha

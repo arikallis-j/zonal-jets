@@ -22,7 +22,7 @@ DESCRIPT = {
     'params': {
         'coriolis': {
             's': 1,
-            'f0': 1,
+            'f0': 0,
             'beta': 0
         },
         'model': {

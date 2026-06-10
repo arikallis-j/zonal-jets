@@ -156,4 +156,14 @@ class Diagnostics:
 
         return ("t", "k_abs"), Pi_Z
 
- 
+    def R_beta(self, ds):
+        beta, t = ds.attrs['params.beta'], ds['t']
+        u_mean = self.mean_velocity(ds)
+        e_tot = self.mean_energy(ds)
+        Epsilon = e_tot/t
+
+        n_R = (beta/(2*u_mean))**(1/2)
+        n_beta = 0.5 * (beta**3/Epsilon)**(1/5)
+        R_beta = n_beta/n_R
+
+        return R_beta

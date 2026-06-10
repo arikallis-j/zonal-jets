@@ -121,13 +121,19 @@ class Driver:
         ds_state = self.io.state_to_dataset(self.atm.calc(s), self.model)
         KE = float(self.diag.mean_energy(ds_state)[0])
         VE = float(self.diag.mean_enstrophy(ds_state)[0])
+        
         time_iter = self.timer.check()
         if k_iter == 0:
             self.speed = 0
         else:
             self.speed = (self.speed * (k_iter-1) + time_iter)/(k_iter)
+        
+        if self.config.model.params.beta != 0:
+            RB = float(self.diag.R_beta(ds_state)[0])
+            logging = f"KE: {KE:.2e}, VE: {VE:.2e}, RB: {RB:.2f} | time-iter = {self.timer.pretty_time(time_iter)} | {k_iter:>{int(np.log10(n_iter))+1}}/{n_iter} [{self.timer.standart_time(self.speed*k_iter)}<{self.timer.standart_time(time_iter*(n_iter-k_iter))}]"
+        else:
+            logging = f"KE: {KE:.2e}, VE: {VE:.2e} | time-iter = {self.timer.pretty_time(time_iter)} | {k_iter:>{int(np.log10(n_iter))+1}}/{n_iter} [{self.timer.standart_time(self.speed*k_iter)}<{self.timer.standart_time(time_iter*(n_iter-k_iter))}]"
 
-        logging = f"KE: {KE:.2e}, VE: {VE:.2e} | time-iter = {self.timer.pretty_time(time_iter)} | {k_iter:>{int(np.log10(n_iter))+1}}/{n_iter} [{self.timer.standart_time(self.speed*k_iter)}<{self.timer.standart_time(time_iter*(n_iter-k_iter))}]"
         print(f"\r{logging}", end="")
 
     def save(self, s):
