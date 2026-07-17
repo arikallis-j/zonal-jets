@@ -1,4 +1,4 @@
-# zonal-jets
+# Installation
 
 Create conda enviroment:
 

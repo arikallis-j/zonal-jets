@@ -1,0 +1,21 @@
+name: jets
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - jupyter
+  - numpy
+  - scipy
+  - pandas
+  - matplotlib
+  - tqdm
+  - xarray
+  - cmocean
+  - netCDF4
+  - h5py
+  - ffmpeg
+  - pip
+  - pip:
+    - tomli_w
+    - "jax[cuda12]"
